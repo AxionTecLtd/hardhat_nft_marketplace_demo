@@ -1,0 +1,53 @@
+<!-- D:\projects\hardhat_nft_marketplace\hardhat-nft\frontend\market.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LazyNFT Marketplace</title>
+
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<header>
+    <h1>LazyNFT Marketplace</h1>
+    <nav>
+        <a href="market.html" class="active">Marketplace</a>
+        <a href="mynft.html">MyNFT</a>
+    </nav>
+</header>
+
+<main>
+    <!-- 数据统计 -->
+    <section class="stats">
+        <div class="ranking">
+            <h3>Top NFTs</h3>
+            <ul id="rankingList"></ul>
+        </div>
+        <div class="priceTrend">
+            <h3>Price Trend</h3>
+            <canvas id="priceChart" height="200"></canvas>
+        </div>
+    </section>
+
+    <!-- NFT 卡片列表 -->
+    <section id="marketNFTs" class="nft-grid"></section>
+
+    <!-- 分页 -->
+    <div class="pagination">
+        <button id="prevPage">Prev</button>
+        <span id="pageInfo"></span>
+        <button id="nextPage">Next</button>
+    </div>
+</main>
+
+<script src="script.js"></script>
+<script>
+    // 等 DOM 和 script.js 都加载完再执行
+    window.addEventListener('DOMContentLoaded', () => {
+        initMarket();
+    });
+</script>
+</body>
+</html>

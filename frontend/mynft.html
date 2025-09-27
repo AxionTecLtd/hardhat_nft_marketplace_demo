@@ -1,0 +1,57 @@
+<!-- D:\projects\hardhat_nft_marketplace\hardhat-nft\frontend\mynft.html -->
+<!-- D:\projects\hardhat_nft_marketplace\hardhat-nft\frontend\mynft.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MyNFT</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+    <h1>MyNFT Collection</h1>
+    <nav>
+        <a href="market.html">Marketplace</a>
+        <a href="mynft.html" class="active">MyNFT</a>
+    </nav>
+</header>
+
+<main>
+    <!-- 上传 NFT 表单 -->
+    <section class="upload">
+        <h3>Upload NFT</h3>
+        <form id="uploadForm">
+            <input type="text" id="nftTitle" placeholder="NFT Title" required>
+            <input type="text" id="nftImage" placeholder="Image URL" required>
+            <input type="text" id="nftStory" placeholder="Short Story" required>
+            <input type="number" step="0.01" id="nftPrice" placeholder="Price (ETH)" required>
+            <select id="nftType">
+                <option value="Fixed Price">Fixed Price</option>
+                <option value="Auction">Auction</option>
+                <option value="Bundle">Bundle</option>
+            </select>
+            <input type="number" id="nftRoyalty" placeholder="Royalty %" required>
+            <button type="submit">Pre-list NFT</button>
+        </form>
+    </section>
+
+    <!-- NFT 列表 -->
+    <section>
+        <h3>My NFT List</h3>
+        <div id="myNFTs" class="nft-grid"></div>
+
+        <div class="pagination">
+            <button id="prevMyPage">Prev</button>
+            <span id="myPageInfo"></span>
+            <button id="nextMyPage">Next</button>
+        </div>
+    </section>
+</main>
+
+<script src="script.js"></script>
+<script>
+initMyNFT(); // 初始化 MyNFT 页面
+</script>
+</body>
+</html>

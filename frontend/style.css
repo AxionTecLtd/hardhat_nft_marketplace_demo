@@ -1,0 +1,221 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    background: #f8f8f8;
+    color: #333;
+}
+
+header {
+    background: #1b1b1f;
+    color: #fff;
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header nav a {
+    color: #aaa;
+    margin-left: 15px;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+header nav a.active {
+    color: #fff;
+}
+
+main {
+    padding: 20px;
+}
+
+.nft-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.nft-card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s ease;
+}
+
+.nft-card:hover {
+    transform: translateY(-5px);
+}
+
+.nft-card img {
+    width: 100%;
+    height: 200px; /* 固定高度以保持一致性 */
+    border-radius: 10px;
+    object-fit: cover;
+}
+
+.nft-info {
+    margin-top: 10px;
+}
+
+.nft-title {
+    font-size: 1.1rem;
+    font-weight: bold;
+}
+
+.nft-creator {
+    font-size: 0.9rem;
+    color: #555;
+}
+
+.nft-story {
+    font-size: 0.85rem;
+    margin: 5px 0;
+    line-height: 1.4; /* 改善可读性 */
+}
+
+.nft-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 5px;
+}
+
+.nft-meta span {
+    font-size: 0.9rem;
+    font-weight: bold;
+}
+
+.nft-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+}
+
+.nft-actions button {
+    flex: 1;
+    margin-right: 5px;
+    padding: 6px 8px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    background: #1b1b1f;
+    color: #fff;
+    font-weight: bold;
+    transition: background 0.2s ease;
+}
+
+.nft-actions button:hover {
+    background: #333; /* 添加 hover 效果 */
+}
+
+.nft-actions button:last-child {
+    margin-right: 0;
+}
+
+.stats {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    gap: 15px; /* 调整间距为更平衡 */
+}
+
+.ranking, .priceTrend {
+    background: #fff;
+    border-radius: 12px;
+    padding: 15px; /* 增加内边距以改善空间感 */
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    width: 50%; /* 调整为 50% 以填满空间 */
+    font-size: 0.85rem; /* 略微增大字体以提高可读性 */
+}
+
+.ranking h3, .priceTrend h3 {
+    font-size: 1rem; /* 标题稍大以突出 */
+    margin-bottom: 10px;
+    border-bottom: 1px solid #eee; /* 添加下边框以分隔 */
+    padding-bottom: 5px;
+}
+
+.ranking ul {
+    list-style: none;
+    margin-top: 5px;
+    max-height: 150px; /* 增加高度以显示更多内容 */
+    overflow-y: auto;
+    padding-left: 0; /* 移除左内边距 */
+}
+
+.ranking ul::-webkit-scrollbar {
+    width: 4px; /* 自定义滚动条样式 */
+}
+
+.ranking ul::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 2px;
+}
+
+.ranking li {
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    font-size: 0.9rem;
+}
+
+.ranking img.creator-avatar {
+    width: 20px; /* 缩小头像 */
+    height: 20px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+
+.priceTrend {
+    display: flex;
+    flex-direction: column;
+}
+
+.priceTrend canvas {
+    width: 100% !important;
+    height: 200px !important; /* 增加高度以使图表更清晰 */
+    margin-top: 10px;
+}
+
+/* 响应式设计：小屏幕下堆叠 stats 和调整网格 */
+@media (max-width: 768px) {
+    .stats {
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .ranking, .priceTrend {
+        width: 100%;
+    }
+
+    .nft-grid {
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    }
+
+    .nft-card img {
+        height: 180px; /* 小屏幕下调整图像高度 */
+    }
+}
+
+@media (max-width: 480px) {
+    header {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    header nav {
+        margin-top: 10px;
+    }
+
+    header nav a {
+        margin: 0 10px;
+    }
+}
