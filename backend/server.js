@@ -10,9 +10,11 @@ const app = express();
 const nftsRouter = require('./routes/nfts.js');
 const usersRouter = require('./routes/users.js'); // 修正为 users.js
 
+
+
 // 加载环境变量 (.env 文件)，并允许覆盖已有环境变量
 // __dirname 表示当前文件夹路径，通过 path.resolve 指向上一级目录
-require('dotenv').config({ path: '../.env', override: true });
+// require('dotenv').config({ path: '../.env', override: true });
 
 // 中间件：解析 JSON 请求体
 // express.json() 会自动将请求体 JSON 转换为 JS 对象，挂载到 req.body
@@ -25,9 +27,19 @@ app.use('/api/nfts', nftsRouter);
 // 所有 /api/users 开头的请求都会交给 usersRouter 处理
 app.use('/api/users', usersRouter);
 
+
+
+
 // 提供前端静态页面
 // 用户访问根路径或前端资源时，Express 会去 ../frontend 文件夹寻找
 app.use(express.static('../frontend'));
+
+
+
+// 默认首页重定向到 mynft.html
+app.get('/', (req, res) => {
+  res.sendFile(require('path').join(__dirname, '../frontend/mynft.html'));
+});
 
 // 设置服务端口
 // 如果 .env 中有 PORT 配置则使用，否则默认 3000

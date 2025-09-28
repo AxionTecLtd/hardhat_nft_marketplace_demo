@@ -1,39 +1,35 @@
-// backend/generateVoucher.js
-require('dotenv').config();
+// backend/utils/voucher.js 后端签名 helper
 const { ethers } = require('ethers');
-const { lazyNFT, lazyNFTAddress } = require('./contracts');
+const { provider, lazyNFTAddress } = require('../contracts');
 
-// 示例 NFT 数据
-const tokenURI = "https://example.com/nft1.json";
-const minPrice = ethers.parseEther("0.01");  // 最小支付 0.01 ETH
-const nonce = 1;
+/**
+ * create voucher using a private key on server side (for testing / hot-wallet scenarios)
+ */
+async function createVoucherServer(creatorPrivateKey, tokenURI, minPriceInEth, creatorAddress, nonce) {
+  const wallet = new ethers.Wallet(creatorPrivateKey);
+  const net = await provider.getNetwork();
+  const chainId = Number(net.chainId);
 
-// 使用创建者私钥生成钱包（注意：不要泄露私钥！）
-const creatorPrivateKey = process.env.CREATOR_PRIVATE_KEY;
-const wallet = new ethers.Wallet(creatorPrivateKey);
+  const domain = { name: "LazyNFT", version: "1", chainId, verifyingContract: lazyNFTAddress };
+  const types = {
+    NFTVoucher: [
+      { name: "tokenURI", type: "string" },
+      { name: "minPrice", type: "uint256" },
+      { name: "creator", type: "address" },
+      { name: "nonce", type: "uint256" }
+    ]
+  };
 
-// 构造 voucher
-const voucher = {
+  const minPriceWei = ethers.parseEther(String(minPriceInEth));
+  const voucher = {
     tokenURI,
-    minPrice,
-    creator: wallet.address,
-    nonce
-};
+    minPrice: minPriceWei,
+    creator: creatorAddress,
+    nonce: BigInt(nonce)
+  };
 
-// 生成签名
-async function signVoucher() {
-    const domain = await lazyNFT._domain();  // ethers v6 获取 EIP712 domain
-    const types = {
-        NFTVoucher: [
-            { name: "tokenURI", type: "string" },
-            { name: "minPrice", type: "uint256" },
-            { name: "creator", type: "address" },
-            { name: "nonce", type: "uint256" }
-        ]
-    };
-    const signature = await wallet._signTypedData(domain, types, voucher);
-    console.log("Voucher:", voucher);
-    console.log("Signature:", signature);
+  const signature = await wallet._signTypedData(domain, types, voucher);
+  return { voucher, signature, minPriceWei: minPriceWei.toString() };
 }
 
-signVoucher();
+module.exports = { createVoucherServer };
