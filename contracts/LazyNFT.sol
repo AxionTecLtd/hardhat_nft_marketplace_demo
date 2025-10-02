@@ -63,6 +63,10 @@ contract LazyNFT is ERC721URIStorage, ERC2981, EIP712, Ownable, ReentrancyGuard 
         _setTokenRoyalty(tokenId, receiver, feeNumerator); // OpenZeppelin ERC2981
     }
 
+    // 获取当前最新 tokenId
+    function getCurrentTokenId() external view returns (uint256) {
+        return _tokenIds.current();
+    }
     // ============================
     // 内部函数：验证 voucher 签名
     // ============================
@@ -83,6 +87,8 @@ contract LazyNFT is ERC721URIStorage, ERC2981, EIP712, Ownable, ReentrancyGuard 
         return ECDSA.recover(digest, signature);
     }
 
+
+    
     // ============================
     // 核心功能：懒铸造 NFT
     // ============================

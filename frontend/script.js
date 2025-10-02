@@ -82,7 +82,7 @@ async function fetchMyNFTs() {
 }
 
 // --------------------------
-// 四、渲染用户 NFT 列表（只显示删除）
+// 四、渲染用户 NFT 列表（只显示未删除）
 // --------------------------
 function renderMyNFTs() {
     const container = document.getElementById('myNFTs');
@@ -136,8 +136,19 @@ async function handleLazyMint(e) {
         story: document.getElementById('nftStory').value,
         price: parseFloat(document.getElementById('nftPrice').value),
         type: document.getElementById('nftType').value,
-        royalty_percent: parseInt(document.getElementById('nftRoyalty').value)
+        royalty_percent: parseInt(document.getElementById('nftRoyalty').value),
+        token_uri: document.getElementById('nftMetadata').value  // 用户自己上传的 JSON
     };
+       // ----- 前端校验 -----
+    if (!newNFT.title || !newNFT.story || !newNFT.price || !newNFT.type || !newNFT.token_uri) {
+        return alert("请填写所有必填字段");
+    }
+    if (isNaN(newNFT.price) || newNFT.price <= 0) return alert("价格必须是大于 0 的数字");
+    const allowedTypes = ['Fixed Price','Auction','Bundle'];
+    if (!allowedTypes.includes(newNFT.type)) return alert("NFT 类型不合法");
+    if (isNaN(newNFT.royalty_percent) || newNFT.royalty_percent < 0 || newNFT.royalty_percent > 100) return alert("版税必须在 0~100 之间");
+
+
 
     try {
         const res = await fetch(`/api/users/${userAddr}/nfts/lazy`, {
@@ -252,9 +263,9 @@ function renderMarketNFTs() {
                 </div>
             </div>
             <div class="nft-actions">
-                <button onclick="likeNFT(${nft.token_id})">❤️ ${nft.likes || 0}</button>
-                <button onclick="wantNFT(${nft.token_id})">⭐ ${nft.wants || 0}</button>
-                <button onclick="buyNFT(${nft.token_id}, '${userAddr}')">Buy</button>
+                <button onclick="likeNFT(${nft.nft_id})">❤️ ${nft.likes || 0}</button>
+                <button onclick="wantNFT(${nft.nft_id})">⭐ ${nft.wants || 0}</button>
+                <button onclick="buyNFT(${nft.nft_id}, '${userAddr}')">Buy</button>
             </div>
         `;
         container.appendChild(card);
@@ -295,22 +306,22 @@ function renderPriceTrend() {
 // --------------------------
 // 十二、Marketplace 点赞/收藏/购买
 // --------------------------
-function likeNFT(tokenId) {
-    alert(`👍 点赞成功 (Token ID: ${tokenId})`);
+function likeNFT(nft_id) {
+    alert(`👍 点赞成功 (NFT ID: ${nft_id})`);
 }
 
-function wantNFT(tokenId) {
-    alert(`⭐ 收藏成功 (Token ID: ${tokenId})`);
+function wantNFT(nft_id) {
+    alert(`⭐ 收藏成功 (NFT ID: ${nft_id})`);
 }
 
 
 // buy
-async function buyNFT(tokenId, buyerAddress) {
+async function buyNFT(nft_id, buyerAddress) {
     try {
         const res = await fetch("/api/nfts/marketplace/buy", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tokenId, buyerAddress }) // 只传这两个字段
+            body: JSON.stringify({ nft_id, buyerAddress }) 
         });
 
         const data = await res.json();

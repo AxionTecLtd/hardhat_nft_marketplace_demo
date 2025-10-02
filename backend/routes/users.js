@@ -59,6 +59,8 @@ router.get('/:address/nfts', async (req, res) => {
 // 2.创作者上传 懒铸造 NFT
 // 创作者上传 → 选懒铸造 Pre-list 按钮 → 调用 POST /:address/nfts/lazy → 预览状态
 // 把 Pre-list NFT 数据存进 PostgreSQL 的 nfts 表。状态是 Pre-list.同时生成 voucher 凭证并存 voucher 表
+// 每个路由引入一次数据库连接池，赋值为client
+// 用户上传信息 → 写入 nfts 表（token_id=null）。-->创建 voucher → 写入 vouchers 表。
 
 
 // ================ 懒铸造 NFT 接口 ========================
@@ -66,7 +68,7 @@ router.post('/:address/nfts/lazy', async (req, res) => {
     const client = await pool.connect();
     try {
         const { address } = req.params;
-        const { title, image_url, story, price, type, royalty_percent } = req.body;
+        const { title, image_url, story, price, type, royalty_percent,token_uri} = req.body;
 
         console.log(`[${new Date().toISOString()}] 📩 收到懒铸造请求:`, { address, title, price, type });
 
@@ -75,34 +77,31 @@ router.post('/:address/nfts/lazy', async (req, res) => {
         if (!title || !image_url || !price) throw new Error("缺少必要字段 (title, image_url, price)");
         if (isNaN(price)) throw new Error("价格必须是数字");
 
-        // ✅ 获取新的 token_id（避免 null）
-        const tokenIdResult = await client.query(`SELECT COALESCE(MAX(token_id), 0) + 1 AS next_token_id FROM nfts`);
-        const tokenId = tokenIdResult.rows[0].next_token_id;
-
-        console.log(`[${new Date().toISOString()}] 🆕 生成新的 tokenId: ${tokenId}`);
-
-        // ✅ 插入 NFT 数据（状态 Pre-list）
+        // 链下 token_id 暂时为null,链上交易成功再回填
+        
+        // ✅ 通过 pg（node-postgres）库,将NFT 数据（状态 Pre-list）写入nfts表。 client.query（`sql  RETURNING *`,[]) 
+        // 第一个参数是sql语句字符串，第二个参数是一个数组，对应 SQL 里的 占位符 $1,$2,...;returning * 表示插入后把该行完整返回。
         const nftResult = await client.query(
-            `INSERT INTO nfts(token_id, title, image_url, story, price, type, royalty_percent, creator_address, current_owner, contract_address, status)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Pre-list') RETURNING *`,
-            [tokenId, title, image_url, story, price, type, royalty_percent || 0, address, address, lazyNFTAddress]
-        );
+            `INSERT INTO nfts( title, image_url, story, price, type, royalty_percent, creator_address, current_owner, contract_address, status)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'Pre-list') RETURNING *`,
+            [ title, image_url, story, price, type, royalty_percent || 0, address, address, lazyNFTAddress]
+        );  // $7 → royalty_percent || 0 → 如果 royalty_percent 没传，就默认 0
         const nft = nftResult.rows[0];
+        // 记录时间戳和nft信息
+        console.log(`[${new Date().toISOString()}] ✅ NFT 已存入数据库: nft_id=${nft.nft_id}`);
 
-        console.log(`[${new Date().toISOString()}] ✅ NFT 已存入数据库: nft_id=${nft.nft_id}, tokenId=${nft.token_id}`);
-
-        // ✅ 生成 Voucher（签名凭证）
-        const uri = image_url; // 这里可以换成 metadata JSON URL
-        const voucher = await createVoucher(nft.token_id, price, uri);
+        // ✅ 生成 Voucher（签名凭证） 
+        // const token_uri = `ipfs://Qm123abc/${nft.nft_id}.json`; // 不用生成 metadata JSON URL，直接使用前端传来的 token_uri，可以降低维护费和法律风险
+        const voucher = await createVoucher(nft.nft_id, price, token_uri);
 
         // ✅ 存 Voucher 数据
         const voucherResult = await client.query(
-            `INSERT INTO vouchers(token_id, min_price, uri, signature, creator_address, status)
-             VALUES($1,$2,$3,$4,$5,'Active') RETURNING *`,
-            [nft.token_id, price.toString(), uri, voucher.signature, address]
+            `INSERT INTO vouchers(nft_id, token_uri, min_price, signature, creator_address,nonce)
+             VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+            [nft.nft_id, token_uri, price, voucher.signature, address,voucher.nonce]
         );
 
-        console.log(`[${new Date().toISOString()}] 📝 Voucher 已生成: tokenId=${nft.token_id}`);
+        console.log(`[${new Date().toISOString()}] 📝 Voucher 已生成: nft_id=${nft.nft_id}`);
 
         // ✅ 返回结果
         res.json({
@@ -120,45 +119,42 @@ router.post('/:address/nfts/lazy', async (req, res) => {
 });
 
 
+
 // ================ 生成 voucher 凭证 ========================
-async function createVoucher(tokenId, minPrice, uri) {
+// nft_id 入参形参 调用时后传入
+// 记得引入ethers.js 和运行的网络条件provider、平台私钥地址这里，只作为演示，后期可替换
+async function createVoucher(nft_id, minPrice, token_uri) {
     try {
-        console.log(`[${new Date().toISOString()}] 🔑 开始生成 Voucher: tokenId=${tokenId}, price=${minPrice}`);
-
+        console.log(`[${new Date().toISOString()}] 🔑 开始生成 Voucher: nft_id=${nft_id}, price=${minPrice}`);
         const creatorWallet = new ethers.Wallet(process.env.LOCAL_CREATOR_PRIVATE_KEY, provider);
-
         const domain = {
-            name: 'LazyNFT-Voucher',
-            version: '1',
-            chainId: 31337, // Hardhat 本地链
-            verifyingContract: lazyNFTAddress
-        };
-
+                name: 'LazyNFT-Voucher',
+                version: '1',
+                chainId: 31337,
+                verifyingContract: lazyNFTAddress
+            };
         const types = {
             NFTVoucher: [
-                { name: 'tokenId', type: 'uint256' },
+                { name: 'tokenURI', type: 'string' },
                 { name: 'minPrice', type: 'uint256' },
-                { name: 'uri', type: 'string' }
+                { name: 'creator', type: 'address' },
+                { name: 'nonce', type: 'uint256' }
             ]
         };
-
         const value = {
-            tokenId,
-            minPrice: ethers.parseEther(minPrice.toString()), // 转 wei
-            uri
+            tokenURI: token_uri,
+            minPrice: ethers.parseEther(minPrice.toString()),
+            creator: creatorWallet.address,
+            nonce: nft_id // 用 nft_id 保证唯一
         };
-
         const signature = await creatorWallet.signTypedData(domain, types, value);
-
-        console.log(`[${new Date().toISOString()}] ✅ Voucher 签名完成: tokenId=${tokenId}`);
-        return { tokenId, minPrice, uri, signature };
-
+        console.log(`[${new Date().toISOString()}] ✅ Voucher 签名完成: nft_id=${nft_id}`);
+        return { nft_id, minPrice, token_uri, signature,nonce: nft_id  };
     } catch (err) {
         console.error(`[${new Date().toISOString()}] ❌ Voucher 生成失败:`, err);
         throw err;
     }
 }
-
 
 
 
@@ -222,13 +218,13 @@ async function createVoucher(tokenId, minPrice, uri) {
 router.post('/marketplace/buy', async (req, res) => {
     const client = await pool.connect();
     try {
-        const { buyerAddress, tokenId } = req.body;
-        if (!buyerAddress || !tokenId) throw new Error("缺少 buyerAddress 或 tokenId");
+        const { buyerAddress, tokenId, nft_id } = req.body;
+        if (!buyerAddress || !tokenId || !nft_id) throw new Error("缺少 buyerAddress / tokenId / nft_id");
 
-        // 查询 voucher
+        // 查询 voucher (用 nft_id 关联)
         const voucherResult = await client.query(
-            `SELECT * FROM vouchers WHERE token_id=$1 AND status='Active'`,
-            [tokenId]
+            `SELECT * FROM vouchers WHERE nft_id=$1 AND status='Active'`,
+            [nft_id]
         );
         if (voucherResult.rowCount === 0) throw new Error("Voucher 不存在或已失效");
         const voucherRow = voucherResult.rows[0];
@@ -243,16 +239,16 @@ router.post('/marketplace/buy', async (req, res) => {
         try {
             owner = await contract.ownerOf(tokenId);
         } catch {
-            owner = null; // NFT 尚未铸造
+            owner = null;
         }
 
         let tx;
         if (!owner) {
             // NFT 未铸造 → redeem
             const nftVoucher = {
-                tokenURI: voucherRow.uri,
+                tokenURI: voucherRow.token_uri,  // 字段名要对齐数据库
                 minPrice: ethers.parseEther(voucherRow.min_price.toString()),
-                creator: voucherRow.creator,
+                creator: voucherRow.creator_address,
                 nonce: voucherRow.nonce
             };
             tx = await contractWithBuyer.redeem(nftVoucher, voucherRow.signature, {
@@ -269,16 +265,20 @@ router.post('/marketplace/buy', async (req, res) => {
 
         // 更新数据库
         await client.query(
-            `UPDATE nfts SET current_owner=$1, status='Sold' WHERE token_id=$2`,
-            [buyerAddress, tokenId]
+            `UPDATE nfts SET current_owner=$1, status='Sold', token_id=$2 WHERE nft_id=$3`,
+            [buyerAddress, tokenId, nft_id]
         );
-        await client.query(`UPDATE vouchers SET status='Used' WHERE token_id=$1`, [tokenId]);
+        await client.query(
+            `UPDATE vouchers SET status='Used' WHERE nft_id=$1`,
+            [nft_id]
+        );
 
         res.json({
             success: true,
             txHash: receipt.transactionHash,
             buyer: buyerAddress,
-            tokenId
+            tokenId,
+            nft_id
         });
     } catch (err) {
         console.error("购买失败:", err);
@@ -296,14 +296,14 @@ router.post('/marketplace/buy', async (req, res) => {
 // 建议逻辑删除 链下，链上只要不销毁都会在的
 // 删除 NFT（逻辑删除，仅链下）
 
-router.delete('/:address/nfts/:nftId', async (req, res) => {
+router.delete('/:address/nfts/:nft_id', async (req, res) => {
     try {
-        const { nftId  } = req.params;
+        const { nft_id  } = req.params;
 
         // 更新数据库 is_deleted 标记
         await pool.query(
             `UPDATE nfts SET is_deleted = 1 WHERE nft_id = $1`,
-            [nftId]
+            [nft_id]
         );
 
         res.json({ success: true, message: 'NFT 已删除（逻辑删除）' });

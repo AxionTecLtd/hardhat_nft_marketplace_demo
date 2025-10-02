@@ -1,3 +1,4 @@
+// 经典步骤：引入-签字-建厂-部署等待-反馈
 // scripts/deploy.js
 const hre = require("hardhat");
 
@@ -20,8 +21,8 @@ async function main() {
 
   // 可选：打印两个合约地址
   console.log("All contracts deployed successfully!");
-  console.log("LazyNFT address:", lazyNFT.target);
-  console.log("Marketplace address:", marketplace.target);
+//   console.log("LazyNFT address:", lazyNFT.target);
+//   console.log("Marketplace address:", marketplace.target);
 }
 
 // 捕获错误
