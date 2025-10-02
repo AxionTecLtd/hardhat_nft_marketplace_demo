@@ -1,5 +1,10 @@
 // D:\projects\hardhat_nft_marketplace\hardhat-nft\backend\server.js
 
+
+// 让 JSON.stringify 支持 BigInt
+BigInt.prototype.toJSON = function() {
+  return this.toString();
+};
 // 引入 express 框架，用于创建 HTTP 服务
 const express = require('express');
 const app = express();
@@ -10,29 +15,12 @@ const app = express();
 const nftsRouter = require('./routes/nfts.js');
 const usersRouter = require('./routes/users.js'); // 修正为 users.js
 
-
-
-// 加载环境变量 (.env 文件)，并允许覆盖已有环境变量
-// __dirname 表示当前文件夹路径，通过 path.resolve 指向上一级目录
-// require('dotenv').config({ path: '../.env', override: true });
-
+// 引入点赞和收藏路由
+const likesRouter = require('./routes/likes.js');
+const wantsRouter = require('./routes/wants.js');
 // 中间件：解析 JSON 请求体
-// express.json() 会自动将请求体 JSON 转换为 JS 对象，挂载到 req.body
 app.use(express.json());
 
-// 路由挂载
-// 所有 /api/nfts 开头的请求都会交给 nftsRouter 处理
-app.use('/api/nfts', nftsRouter);
-
-// 所有 /api/users 开头的请求都会交给 usersRouter 处理
-app.use('/api/users', usersRouter);
-
-
-
-
-// 提供前端静态页面
-// 用户访问根路径或前端资源时，Express 会去 ../frontend 文件夹寻找
-app.use(express.static('../frontend'));
 
 
 
@@ -44,6 +32,32 @@ app.get('/', (req, res) => {
 // 设置服务端口
 // 如果 .env 中有 PORT 配置则使用，否则默认 3000
 const PORT = process.env.PORT || 3000;
+
+
+// 提供前端静态页面
+// 用户访问根路径或前端资源时，Express 会去 ../frontend 文件夹寻找
+app.use(express.static('../frontend'));
+
+
+
+// 加载环境变量 (.env 文件)，并允许覆盖已有环境变量
+// __dirname 表示当前文件夹路径，通过 path.resolve 指向上一级目录
+// require('dotenv').config({ path: '../.env', override: true });
+
+
+// 路由挂载
+// 所有 /api/nfts 开头的请求都会交给 nftsRouter 处理
+app.use('/api/nfts', nftsRouter);
+
+// 所有 /api/users 开头的请求都会交给 usersRouter 处理
+app.use('/api/users', usersRouter);
+
+
+
+// 点赞/收藏接口挂载
+app.use('/api/nft/likes', likesRouter);
+app.use('/api/nft/wants', wantsRouter);
+
 
 // 启动服务并监听指定端口
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

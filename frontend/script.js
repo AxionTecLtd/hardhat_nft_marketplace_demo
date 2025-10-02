@@ -3,6 +3,7 @@
 // 企业级 MyNFT + Marketplace 前端逻辑
 // ==========================
 
+
 // --------------------------
 // 一、全局变量
 // --------------------------
@@ -13,21 +14,37 @@ let userAddr = '';            // 用户钱包地址
 
 let nftData = [];             // Marketplace NFT 数据
 let currentPage = 1;          // Marketplace 当前页
-const marketItemsPerPage = 6; // Marketplace 每页数量
+const marketItemsPerPage = 12; // Marketplace 每页数量
+
+// --------------------------
+// 统一获取钱包地址函数
+// --------------------------
+
+// 获取用户钱包地址
+function getUserAddress() {
+    let addr = localStorage.getItem('walletAddress');
+    if (!addr) {
+        addr = prompt("请输入钱包地址（测试用）:");
+        if (!addr) return null;
+        localStorage.setItem('walletAddress', addr);
+    }
+    return addr;
+}
+
+// 设置钱包地址（切换）
+function setUserAddress(newAddr) {
+    if (!newAddr) return;
+    localStorage.setItem('walletAddress', newAddr);
+}
+
 
 // --------------------------
 // 二、初始化 MyNFT 页面
 // --------------------------
 function initMyNFT() {
-    const savedAddress = localStorage.getItem('walletAddress');
-    if (savedAddress) {
-        userAddr = savedAddress;
-    } else {
-        const address = prompt("请输入您的钱包地址（测试用）:");
-        if (!address) return alert("必须提供钱包地址");
-        userAddr = address;
-        localStorage.setItem('walletAddress', userAddr);
-    }
+    userAddr = getUserAddress();
+    if (!userAddr) return alert("必须提供钱包地址");
+    
 
     fetchMyNFTs();
 
@@ -81,47 +98,237 @@ async function fetchMyNFTs() {
     }
 }
 
-// --------------------------
-// 四、渲染用户 NFT 列表（只显示未删除）
-// --------------------------
-function renderMyNFTs() {
-    const container = document.getElementById('myNFTs');
-    if (!container) return;
-    container.innerHTML = '';
 
+// ------------------------------------------
+// 四、 渲染用户 NFT 列表（一级市场 / 二级市场）
+// ------------------------------------------
+/**
+ * 功能目标：
+ *  1. 根据 NFT 的市场类别（一级 / 二级）、状态（Sold / 未售出）、持有人权限，动态渲染 UI。
+ *  2. 只有创作者或当前持有人，才能执行删除 / 上架 / 下架操作。
+ *  3. 已售出且非持有人 → 按钮显示为「已售出」，删除按钮隐藏。
+ *
+ * 权限控制：
+ *  - 一级市场（token_id 为空） → 仅创作者可操作。
+ *  - 二级市场（token_id 存在）：
+ *      · 当前持有人 = userAddr → 可上架/下架 + 删除。
+ *      · 非持有人 → 禁用操作，显示“已售出”或“无权限”。
+ *
+ * UI 渲染：
+ *  - 状态文本根据 is_listed、status 动态切换。
+ *  - 删除按钮在无权限时彻底隐藏（避免误点或假象）。
+ *  - 上架按钮文案动态切换：投放/撤回、链上出售/停售。
+ *
+ * 分页处理：
+ *  - 按当前页码 + 每页数量切片渲染。
+ *  - 更新页码信息。
+ *
+ * 事件绑定：
+ *  - 删除按钮 → removeNFTHandler。
+ *  - 上架/下架按钮 → toggleListingHandler（仅绑定非禁用按钮）。
+ */
+function renderMyNFTs() {
+    const primaryContainer = document.getElementById('primaryNFTs');
+    const secondaryContainer = document.getElementById('secondaryNFTs');
+    if (!primaryContainer || !secondaryContainer) return;
+
+    // 清空容器，防止重复渲染
+    primaryContainer.innerHTML = '';
+    secondaryContainer.innerHTML = '';
+
+    // 分页切片范围
     const start = (myCurrentPage - 1) * myItemsPerPage;
     const end = start + myItemsPerPage;
 
     myNFTData.slice(start, end).forEach(nft => {
         const card = document.createElement('div');
         card.className = 'nft-card';
+
+        const isListed = Boolean(Number(nft.is_listed)); // 是否上架
+        const isPrimary = !nft.token_id;                 // 是否一级市场
+        let statusText = '';     // 状态描述
+        let toggleBtnHtml = '';  // 上架/下架按钮
+        let removeBtnHtml = '';  // 删除按钮（可能隐藏）
+
+        // ------------------------
+        // 一级市场逻辑
+        // ------------------------
+        if (isPrimary) {
+            statusText = `状态: ${isListed ? '懒铸造已投放一级市场' : '懒铸造未投放'}`;
+
+            if (nft.creator_address === userAddr) {
+                // 当前用户是创作者 → 允许投放/撤回、删除
+                toggleBtnHtml = `<button class="toggleListingBtn" data-nftid="${nft.nft_id}">
+                                    ${isListed ? '撤回一级市场' : '投放一级市场'}
+                                 </button>`;
+                removeBtnHtml = `<button class="removeNFTBtn" data-nftid="${nft.nft_id}">删除</button>`;
+            } else {
+                // 非创作者 → 禁用操作，隐藏删除
+                toggleBtnHtml = `<button disabled>无权限</button>`;
+            }
+        }
+
+        // ------------------------
+        // 二级市场逻辑
+        // ------------------------
+        else {
+            if (nft.status === 'Sold') {
+                if (nft.current_owner === userAddr) {
+                    // 已售出但当前用户为持有人（回购情况）
+                    statusText = `状态: 已回购 - ${isListed ? '二级市场出售中' : '未链上出售'}`;
+                    toggleBtnHtml = `<button class="toggleListingBtn" data-nftid="${nft.nft_id}" data-onchain="true">
+                                        ${isListed ? '链上停售' : '链上出售'}
+                                     </button>`;
+                    removeBtnHtml = `<button class="removeNFTBtn" data-nftid="${nft.nft_id}">删除</button>`;
+                } else {
+                    // 已售出且非持有人 → 禁止一切操作
+                    statusText = '状态: 二级市场已售出';
+                    toggleBtnHtml = `<button disabled>已售出</button>`;
+                }
+            } else {
+                // 未售出 → 判断持有人
+                statusText = `状态: ${isListed ? '二级市场出售中' : '未链上出售'}`;
+                if (nft.current_owner === userAddr) {
+                    toggleBtnHtml = `<button class="toggleListingBtn" data-nftid="${nft.nft_id}" data-onchain="true">
+                                        ${isListed ? '链上停售' : '链上出售'}
+                                     </button>`;
+                    removeBtnHtml = `<button class="removeNFTBtn" data-nftid="${nft.nft_id}">删除</button>`;
+                } else {
+                    toggleBtnHtml = `<button disabled>已售出</button>`;
+                }
+            }
+        }
+
+        // ------------------------
+        // 拼装卡片 UI
+        // ------------------------
         card.innerHTML = `
             <img src="${nft.image_url}" alt="${nft.title}">
             <div class="nft-info">
                 <div class="nft-title">${nft.title}</div>
-                <div class="nft-story">${nft.story}</div>
+                <div class="nft-story">${nft.story || ''}</div>
                 <div class="nft-meta">
                     <span>${nft.type || ''}</span>
                     <span>${nft.price || 0} ETH</span>
                 </div>
-                <div class="nft-meta">Status: ${nft.status}</div>
+                <div class="nft-meta">${statusText}</div>
             </div>
             <div class="nft-actions">
-                <button class="removeNFTBtn" data-nftid="${nft.nft_id}">Remove</button>
+                ${toggleBtnHtml}
+                ${removeBtnHtml}
             </div>
         `;
-        container.appendChild(card);
+
+        // 根据市场类别放入对应容器
+        if (isPrimary) {
+            primaryContainer.appendChild(card);
+        } else {
+            secondaryContainer.appendChild(card);
+        }
     });
 
+    // ------------------------
+    // 分页信息渲染
+    // ------------------------
     const pageInfo = document.getElementById('myPageInfo');
-    if (pageInfo) pageInfo.innerText = `Page ${myCurrentPage}/${Math.ceil(myNFTData.length / myItemsPerPage)}`;
+    if (pageInfo) {
+        pageInfo.innerText = `Page ${myCurrentPage}/${Math.ceil(myNFTData.length / myItemsPerPage)}`;
+    }
 
-    // 绑定删除事件
+    // ------------------------
+    // 事件绑定
+    // ------------------------
     document.querySelectorAll('.removeNFTBtn').forEach(btn => {
         btn.removeEventListener('click', removeNFTHandler);
         btn.addEventListener('click', removeNFTHandler);
     });
+    document.querySelectorAll('.toggleListingBtn:not([disabled])').forEach(btn => {
+        btn.removeEventListener('click', toggleListingHandler);
+        btn.addEventListener('click', toggleListingHandler);
+    });
 }
+
+
+
+
+
+function toggleListingHandler(e) {
+    const nft_id = e.target.dataset.nftid;
+    toggleListing(nft_id);
+}
+
+async function toggleListing(nft_id) {
+    const userAddr = getUserAddress();
+    if (!userAddr) return alert("未获取钱包地址");
+
+    const nft = myNFTData.find(n => String(n.nft_id) === String(nft_id));
+    if (!nft) return alert("NFT 数据不存在");
+
+    const isListed = Boolean(Number(nft.is_listed));
+
+    let apiUrl = '';
+    let method = 'POST';
+    let bodyData = { sellerAddress: userAddr, nft_id };
+
+    // 一级市场（未铸造 NFT）保留原 confirm 逻辑
+    if (!nft.token_id) {
+        const action = isListed ? '撤回一级市场' : '投放一级市场';
+        if (!confirm(`确定要执行「${action}」操作吗？\nNFT: ${nft.title}`)) return;
+
+        // 一级市场不调用链上 Marketplace，只更新数据库或调用现有 LazyNFT mint 流程
+        apiUrl = `/api/users/${userAddr}/nfts/${nft_id}/toggle-listing`; // 后端自己处理一级市场
+        bodyData.onChain = false;
+
+    } else {
+        // 二级市场逻辑
+        if (!isListed) {
+            // 链上出售
+            // 用户输入新的上架价格
+
+            const choice = prompt(
+                `请确认 NFT 链上操作：\n1️⃣ 链上出售 (On-chain) - 会产生 Gas 费用\n请输入 1 确认`,
+                ""
+            );
+            if (choice !== "1") return alert("操作已取消");
+            
+
+            apiUrl = `/api/nfts/marketplace/list`; // 上架
+            bodyData.price = nft.price;       // 需要传价格
+        } else {
+            // 链上停售
+            const choice = prompt(
+                `请确认 NFT 链上操作：\n2️⃣ 链上停售 (Off-chain) - 会产生 Gas 费用\n请输入 2 确认`,
+                ""
+            );
+            if (choice !== "2") return alert("操作已取消");
+
+            apiUrl = `/api/nfts/marketplace/cancel`; // 下架
+        }
+    }
+
+    try {
+        const res = await fetch(apiUrl, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(bodyData)
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            nft.is_listed = apiUrl.includes('list') ? 1 : 0;
+            alert(`✅ NFT 已成功${apiUrl.includes('list') ? '链上出售' : '链上停售'}`);
+            renderMyNFTs();
+        } else {
+            alert(`❌ 操作失败: ${data.error || '未知错误'}`);
+        }
+    } catch (err) {
+        console.error("切换上架状态失败:", err);
+        alert("系统错误，请稍后再试");
+    }
+}
+
+
+
 
 // --------------------------
 // 五、上传 NFT 表单处理（唯一懒铸造入口）
@@ -210,6 +417,7 @@ async function initMarket() {
     renderMarketNFTs();
     renderRanking();
     renderPriceTrend();
+    await renderTopNFTs(); // ✅ 等数据返回再渲染
 
     document.getElementById('prevPage').addEventListener('click', () => {
         if (currentPage > 1) {
@@ -239,42 +447,6 @@ async function fetchNFTs() {
     }
 }
 
-function renderMarketNFTs() {
-    const container = document.getElementById('marketNFTs');
-    if (!container) return;
-    container.innerHTML = '';
-
-    const start = (currentPage - 1) * marketItemsPerPage;
-    const end = start + marketItemsPerPage;
-
-    nftData.slice(start, end).forEach(nft => {
-        const card = document.createElement('div');
-        card.className = 'nft-card';
-        card.innerHTML = `
-            <img src="${nft.image_url}" alt="${nft.title}">
-            <div class="nft-info">
-                <div class="nft-title">${nft.title}</div>
-                <div class="nft-creator">Creator: ${nft.creator_address}</div>
-                <div class="nft-story">${nft.story || ''}</div>
-                <div class="nft-meta">
-                    <span>${nft.type || ''}</span>
-                    <span>${nft.price || 0} ETH</span>
-                    <span>Royalty: ${nft.royalty_percent || 0}%</span>
-                </div>
-            </div>
-            <div class="nft-actions">
-                <button onclick="likeNFT(${nft.nft_id})">❤️ ${nft.likes || 0}</button>
-                <button onclick="wantNFT(${nft.nft_id})">⭐ ${nft.wants || 0}</button>
-                <button onclick="buyNFT(${nft.nft_id}, '${userAddr}')">Buy</button>
-            </div>
-        `;
-        container.appendChild(card);
-    });
-
-    const pageInfo = document.getElementById('pageInfo');
-    if (pageInfo) pageInfo.innerText = `Page ${currentPage}/${Math.ceil(nftData.length / marketItemsPerPage)}`;
-}
-
 // --------------------------
 // 十一、Marketplace 辅助功能
 // --------------------------
@@ -290,38 +462,43 @@ function renderRanking() {
         container.appendChild(li);
     });
 }
-// 走势
+
+// 价格走势
+let priceChartInstance = null; // 保存 Chart 实例
+
 function renderPriceTrend() {
     const ctx = document.getElementById('priceChart')?.getContext('2d');
     if (!ctx) return;
+
     const labels = nftData.slice(0,10).map(n => n.title);
     const data = nftData.slice(0,10).map(n => n.price || 0);
-    new Chart(ctx, {
+
+    // 如果已有实例，先销毁
+    if (priceChartInstance) priceChartInstance.destroy();
+
+    priceChartInstance = new Chart(ctx, {
         type: 'line',
         data: { labels, datasets: [{ label:'Price ETH', data, borderColor:'rgb(75,192,192)', tension:0.3 }]},
         options: { responsive:true }
     });
 }
 
+
+
+
 // --------------------------
-// 十二、Marketplace 点赞/收藏/购买
+// 十三、购买
 // --------------------------
-function likeNFT(nft_id) {
-    alert(`👍 点赞成功 (NFT ID: ${nft_id})`);
-}
+// 
+async function buyNFT(nft_id) {
+    const buyerAddress = getUserAddress();
+    if (!buyerAddress) return alert("未获取钱包地址");
 
-function wantNFT(nft_id) {
-    alert(`⭐ 收藏成功 (NFT ID: ${nft_id})`);
-}
-
-
-// buy
-async function buyNFT(nft_id, buyerAddress) {
     try {
         const res = await fetch("/api/nfts/marketplace/buy", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ nft_id, buyerAddress }) 
+            body: JSON.stringify({ nft_id, buyerAddress })
         });
 
         const data = await res.json();
@@ -338,6 +515,240 @@ async function buyNFT(nft_id, buyerAddress) {
 
 
 
+// --------------------------
+// 十四、Top NFTs 两列数据
+// --------------------------
+let topLikesData = [];
+let topWantsData = [];
+
+// --------------------------
+// 渲染 Top Likes / Wants 两列（兼容后端返回）
+// --------------------------
+async function renderTopNFTs() {
+    const likesList = document.getElementById('likesTopList');
+    const wantsList = document.getElementById('wantsTopList');
+
+    if (!likesList || !wantsList) {
+        return console.warn("❌ Top NFTs DOM 元素不存在");
+    }
+
+    try {
+        // 并行请求
+        const [resLikes, resWants] = await Promise.all([
+            fetch('/api/nft/likes/top?limit=10'),
+            fetch('/api/nft/wants/top?limit=10')
+        ]);
+
+        const likesData = await resLikes.json();
+        const wantsData = await resWants.json();
+
+        // 🔹 兼容不同返回格式
+        topLikesData = Array.isArray(likesData) ? likesData :
+                       (Array.isArray(likesData.data) ? likesData.data : []);
+        topWantsData = Array.isArray(wantsData) ? wantsData :
+                       (Array.isArray(wantsData.data) ? wantsData.data : []);
+
+        // 🔹 清空列表
+        likesList.innerHTML = '';
+        wantsList.innerHTML = '';
+
+        // 🔹 渲染 Likes
+        topLikesData.forEach(nft => {
+            const li = document.createElement('li');
+            li.innerText = `${nft.title || '未命名'} - Likes: ${nft.likes || 0}`;
+            likesList.appendChild(li);
+        });
+
+        // 🔹 渲染 Wants
+        topWantsData.forEach(nft => {
+            const li = document.createElement('li');
+            li.innerText = `${nft.title || '未命名'} - Wants: ${nft.wants || 0}`;
+            wantsList.appendChild(li);
+        });
+
+    } catch (err) {
+        console.error('❌ 获取 Top NFTs 失败:', err);
+    }
+}
+
+
+
+
+// --------------------------
+// 点赞 NFT（增强版）
+// --------------------------
+const lastLikeTime = {}; // nft_id -> 时间戳
+async function likeNFT(nft_id) {
+    const addr = getUserAddress();
+    if (!addr) return alert("未获取钱包地址");
+
+    const now = Date.now();
+    if (lastLikeTime[nft_id] && now - lastLikeTime[nft_id] < 1000) {
+        return alert("操作过于频繁，请稍后再试");
+    }
+    lastLikeTime[nft_id] = now;
+
+    try {
+        const res = await fetch('/api/nft/likes/like', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_address: addr,
+                nft_id,
+                ip_address: '127.0.0.1',
+                user_agent: navigator.userAgent
+            })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            // 🔹 更新 Marketplace NFT 数据本地状态
+            const nft = nftData.find(n => String(n.nft_id) === String(nft_id));
+            if (nft) {
+                nft.likes = data.likes; 
+                nft.user_liked = data.status; // 1 点赞, 0 未点赞
+            }
+
+            // 🔹 更新按钮显示
+            const btn = document.querySelector(`button[data-likeid="${nft_id}"]`);
+            if (btn) {
+                btn.style.color = data.status === 1 ? 'red' : 'white';
+                btn.innerText = `${data.status === 1 ? '❤️' : '🤍'} ${data.likes}`;  // ⚠️ 改这里
+            }
+
+            // 🔹 刷新排行榜
+            renderTopNFTs();
+        } else {
+            alert(`❌ 点赞失败: ${data.error || '未知错误'}`);
+        }
+    } catch (err) {
+        console.error("点赞失败:", err);
+        alert("系统错误，请查看控制台");
+    }
+}
+
+// --------------------------
+// 收藏 NFT（增强版）
+// --------------------------
+const lastWantTime = {}; // nft_id -> 时间戳
+async function wantNFT(nft_id) {
+    const addr = getUserAddress();
+    if (!addr) return alert("未获取钱包地址");
+
+    const now = Date.now();
+    if (lastWantTime[nft_id] && now - lastWantTime[nft_id] < 1000) {
+        return alert("操作过于频繁，请稍后再试");
+    }
+    lastWantTime[nft_id] = now;
+
+    try {
+        const res = await fetch('/api/nft/wants/want', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_address: addr,
+                nft_id,
+                ip_address: '127.0.0.1',
+                user_agent: navigator.userAgent
+            })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+            const nft = nftData.find(n => String(n.nft_id) === String(nft_id));
+            if (nft) {
+                nft.wants = data.wants;      // ⚠️ 保持和后端字段一致
+                nft.user_wanted = data.status; // 1 收藏, 0 未收藏
+            }
+
+            const btn = document.querySelector(`button[data-wantid="${nft_id}"]`);
+            if (btn) {
+                btn.style.color = data.status === 1 ? 'gold' : 'white';
+                btn.innerText = `${data.status === 1 ? '⭐' : '☆'} ${data.wants}`;  // ⚠️ 改这里
+            }
+
+            renderTopNFTs();
+        } else {
+            alert(`❌ 收藏失败: ${data.error || '未知错误'}`);
+        }
+    } catch (err) {
+        console.error("收藏失败:", err);
+        alert("系统错误，请查看控制台");
+    }
+}
+
+
+
+// ------------------------------------------
+// Marketplace 渲染 NFT（匹配 Likes/Wants API）
+// ------------------------------------------
+function renderMarketNFTs() {
+    const container = document.getElementById('marketNFTs');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const start = (currentPage - 1) * marketItemsPerPage;
+    const end = start + marketItemsPerPage;
+
+    nftData.slice(start, end).forEach(nft => {
+        const liked = nft.user_liked === 1 || nft.user_liked === '1';
+        const wanted = nft.user_wanted === 1 || nft.user_wanted === '1';
+
+        const card = document.createElement('div');
+        card.className = 'nft-card';
+
+        card.innerHTML = `
+            <img src="${nft.image_url}" alt="${nft.title}">
+            <div class="nft-info">
+                <div class="nft-title">${nft.title}</div>
+                <div class="nft-creator">Creator: ${nft.creator_address}</div>
+                <div class="nft-story">${nft.story || ''}</div>
+                <div class="nft-meta">
+                    <span>${nft.type || ''}</span>
+                    <span>${nft.price || 0} ETH</span>
+                    <span>Royalty: ${nft.royalty_percent || 0}%</span>
+                </div>
+            </div>
+            <div class="nft-actions">
+                <button data-likeid="${nft.nft_id}" style="color:${liked?'red':'white'}">
+                    ${liked?'❤️':'🤍'} ${nft.likes || 0}
+                </button>
+                <button data-wantid="${nft.nft_id}" style="color:${wanted?'gold':'white'}">
+                    ${wanted?'⭐':'☆'} ${nft.wants || 0}
+                </button>
+                <button onclick="buyNFT(${nft.nft_id})">Buy</button>
+            </div>
+        `;
+
+        container.appendChild(card);
+    });
+
+    // ✅ 绑定点击事件
+    container.querySelectorAll('button[data-likeid]').forEach(btn => {
+        btn.removeEventListener('click', likeClickHandler);
+        btn.addEventListener('click', likeClickHandler);
+    });
+    container.querySelectorAll('button[data-wantid]').forEach(btn => {
+        btn.removeEventListener('click', wantClickHandler);
+        btn.addEventListener('click', wantClickHandler);
+    });
+
+    // 分页显示
+    const pageInfo = document.getElementById('pageInfo');
+    if (pageInfo) pageInfo.innerText = `Page ${currentPage}/${Math.ceil(nftData.length / marketItemsPerPage)}`;
+}
+
+
+// 点击处理器
+function likeClickHandler(e) {
+    const nft_id = e.target.dataset.likeid;
+    likeNFT(nft_id);
+}
+function wantClickHandler(e) {
+    const nft_id = e.target.dataset.wantid;
+    wantNFT(nft_id);
+}
+
 
 // --------------------------
 // 初始化
@@ -345,4 +756,6 @@ async function buyNFT(nft_id, buyerAddress) {
 document.addEventListener('DOMContentLoaded', () => {
     initMyNFT();
     initMarket();
+   
 });
+

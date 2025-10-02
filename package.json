@@ -6,7 +6,7 @@
   "dependencies": {
     "@openzeppelin/contracts": "^4.8.3",
     "cors": "^2.8.5",
-    "dotenv": "^17.2.2",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "nft.storage": "^7.2.0",
     "pg": "^8.16.3"

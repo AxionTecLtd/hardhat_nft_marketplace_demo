@@ -40,6 +40,14 @@ main {
     gap: 20px;
     margin-top: 20px;
 }
+.top-nfts-grid {
+    display: flex;
+    gap: 20px;
+}
+.top-likes, .top-wants {
+    flex: 1;
+}
+
 
 .nft-card {
     background: #fff;

@@ -1,3 +1,6 @@
+
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,6 +8,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MyNFT</title>
 <link rel="stylesheet" href="style.css">
+<!-- <script type="module">
+import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6/dist/ethers.min.js"; 
+</script>
+<script type="module" src="./script.js"></script> -->
+
+
 <style>
 /* 教程弹窗样式 */
 .tutorial-btn {
@@ -107,8 +116,12 @@
 
     <!-- NFT 列表 -->
     <section>
-        <h3>My NFT List</h3>
-        <div id="myNFTs" class="nft-grid"></div>
+        <h3>一级市场（链下市场 / 懒铸造 / off-chain）</h3>
+        <div id="primaryNFTs" class="nft-grid"></div>
+
+        <h3>二级市场（链上市场 / Gas费 / on-chain）</h3>
+        <div id="secondaryNFTs" class="nft-grid"></div>
+
         <div class="pagination">
             <button id="prevMyPage">Prev</button>
             <span id="myPageInfo"></span>
@@ -118,10 +131,19 @@
 </main>
 
 <!-- 教程弹窗 -->
+<!-- 教程弹窗 -->
 <div class="tutorial-modal" id="tutorialModal">
     <span class="close-tutorial" id="closeTutorialBtn">&times;</span>
     <h3>📚 NFT 上传教程（详细版）</h3>
-        <!-- 新增视频教程入口 -->
+
+    <!-- 市场机制简短介绍 -->
+    <div class="tutorial-intro">
+        <p><strong>一级市场（懒铸造 / 链下市场）</strong>：无需支付链上费用，生成 <code>Voucher</code> 即可，作品还未真正写入区块链。</p>
+        <p><strong>二级市场（链上市场）</strong>：当 NFT 被铸造上链（拥有 <code>token_id</code> 且 <code>voucher</code> 状态为 used），才进入二级市场，需要真实区块链交易。</p>
+        <p><strong>LazyMint（懒铸造）</strong>：先签名生成凭证，等到真正买家购买时才执行链上交易，从而节省 Gas 费用。</p>
+    </div>
+
+    <!-- 新增视频教程入口 -->
     <div class="tutorial-step">
         <button class="step-toggle">🎥 视频教程（推荐先看）</button>
         <div class="step-content">
@@ -131,6 +153,7 @@
         </div>
     </div>
 
+    <!-- 步骤 1 -->
     <div class="tutorial-step">
         <button class="step-toggle">步骤 1：准备图片</button>
         <div class="step-content">
@@ -140,6 +163,7 @@
         </div>
     </div>
 
+    <!-- 步骤 2 -->
     <div class="tutorial-step">
         <button class="step-toggle">步骤 2：上传到 Filebase/IPFS</button>
         <div class="step-content">
@@ -150,22 +174,23 @@
             <p>访问地址可能类似：<br>
                <code>https://loud-olive-rook.myfilebase.com/ipfs/QmShhDFiDoj7s9vANpdXKoSfuogDuBM2wX9SroKHrdQ25p</code></p>
             <p>⚠️ 易错点：<br>
-               - 不能填本地路径 <code>C:\Users\xx\my_nft.png</code>。<br>
+               - 不能填本地路径 <code>C:\Users\xx\my_nft.png</code><br>
                - 最稳定的是用 <code>https://.../ipfs/CID</code> 网关链接。</p>
         </div>
     </div>
 
+    <!-- 步骤 3 -->
     <div class="tutorial-step">
         <button class="step-toggle">步骤 3：生成 JSON Metadata</button>
         <div class="step-content">
             <p>在本地新建 <code>my_nft.json</code>，内容示例如下：</p>
             <pre>{
-  "name": "A cute girl's childhood time",
-  "description": "A little girl focused and engrossed",
-  "image": "ipfs://QmShhDFiDoj7s9vANpdXKoSfuogDuBM2wX9SroKHrdQ25p",
-  "attributes": [
-    {"trait_type": "Story", "value": "Looking Back on Childhood"}
-  ]
+ "name": "A cute girl's childhood time",
+ "description": "A little girl focused and engrossed",
+ "image": "ipfs://QmShhDFiDoj7s9vANpdXKoSfuogDuBM2wX9SroKHrdQ25p",
+ "attributes": [
+   {"trait_type": "Story", "value": "Looking Back on Childhood"}
+ ]
 }</pre>
             <p>⚠️ 易错点：<br>
                - <code>image</code> 必须是你刚才上传的图片的 CID。<br>
@@ -176,6 +201,7 @@
         </div>
     </div>
 
+    <!-- 步骤 4 -->
     <div class="tutorial-step">
         <button class="step-toggle">步骤 4：填入 NFT 表单</button>
         <div class="step-content">
@@ -195,26 +221,27 @@
     </div>
 </div>
 
+
 <script src="script.js"></script>
 <script>
-initMyNFT(); // 初始化 MyNFT 页面
+    // initMyNFT(); // 初始化 MyNFT 页面
 
-// 教程弹窗显示/关闭
-const tutorialModal = document.getElementById('tutorialModal');
-document.getElementById('showTutorialBtn').addEventListener('click', () => {
-    tutorialModal.style.display = 'block';
-});
-document.getElementById('closeTutorialBtn').addEventListener('click', () => {
-    tutorialModal.style.display = 'none';
-});
-
-// 教程步骤展开/收起
-document.querySelectorAll('.step-toggle').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const content = btn.nextElementSibling;
-        content.style.display = content.style.display === 'block' ? 'none' : 'block';
+    // 教程弹窗显示/关闭
+    const tutorialModal = document.getElementById('tutorialModal');
+    document.getElementById('showTutorialBtn').addEventListener('click', () => {
+        tutorialModal.style.display = 'block';
     });
-});
+    document.getElementById('closeTutorialBtn').addEventListener('click', () => {
+        tutorialModal.style.display = 'none';
+    });
+
+    // 教程步骤展开/收起
+    document.querySelectorAll('.step-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const content = btn.nextElementSibling;
+            content.style.display = content.style.display === 'block' ? 'none' : 'block';
+        });
+    });
 </script>
 </body>
 </html>

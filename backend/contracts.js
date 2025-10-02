@@ -7,7 +7,9 @@ const { ethers } = require('ethers');
 // 1.网络+合约地址配置
 // ============================
 // 如果存在本地网络地址，则使用本地，否则使用 Sepolia 测试网
-const RPC_URL = process.env.RPC_URL || process.env.SEPOLIA_URL;
+
+const RPC_URL = process.env.LOCAL_RPC_URL 
+// const RPC_URL = process.env.SEPOLIA_URL;  //  Sepolia 测试网
 const LAZY_NFT_ADDRESS = process.env.LAZY_NFT_ADDRESS;
 const MARKETPLACE_ADDRESS = process.env.MARKETPLACE_ADDRESS;
 
@@ -34,9 +36,12 @@ const marketplaceAbi = require('../artifacts/contracts/Marketplace.sol/Marketpla
 const lazyNFT = new ethers.Contract(LAZY_NFT_ADDRESS, lazyNFTAbi, provider);
 const marketplace = new ethers.Contract(MARKETPLACE_ADDRESS, marketplaceAbi, provider);
 
-// 私钥-钱包
+// 私钥-创作者签名用的私钥
 const LOCAL_CREATOR_PRIVATE_KEY = process.env.LOCAL_CREATOR_PRIVATE_KEY; // 测试私钥
 const local_test_wallet = new ethers.Wallet(LOCAL_CREATOR_PRIVATE_KEY, provider);  // 测试用钱包实例（本地）
+// 购买者私钥
+const LOCAL_SELLER_PRIVATE_KEY_LIST  =  process.env.LOCAL_SELLER_PRIVATE_KEY_LIST // only for test
+
 
 
 
@@ -60,5 +65,7 @@ module.exports = {
     
     // 测试网 可以直接替换
     LOCAL_CREATOR_PRIVATE_KEY,                  // 本地
+    LOCAL_SELLER_PRIVATE_KEY_LIST,              // 购买后出售上架用的 私钥代 seller
+
 
 };

@@ -1,15 +1,23 @@
 <!-- D:\projects\hardhat_nft_marketplace\hardhat-nft\frontend\market.html -->
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LazyNFT Marketplace</title>
-
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- <script type="module">
+import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6/dist/ethers.min.js"; 
+</script>
+<script type="module" src="./script.js"></script> -->
+
 </head>
 <body>
+    
 <header>
     <h1>LazyNFT Marketplace</h1>
     <nav>
@@ -23,7 +31,16 @@
     <section class="stats">
         <div class="ranking">
             <h3>Top NFTs</h3>
-            <ul id="rankingList"></ul>
+            <div class="top-nfts-grid">
+                <div class="top-likes">
+                    <h4>👍 Likes Top 10</h4>
+                    <ul id="likesTopList"></ul>
+                </div>
+                <div class="top-wants">
+                    <h4>⭐ Wants Top 10</h4>
+                    <ul id="wantsTopList"></ul>
+                </div>
+            </div>
         </div>
         <div class="priceTrend">
             <h3>Price Trend</h3>
@@ -32,6 +49,7 @@
     </section>
 
     <!-- NFT 卡片列表 -->
+     <div id="toast" class="toast"></div>
     <section id="marketNFTs" class="nft-grid"></section>
 
     <!-- 分页 -->

@@ -15,9 +15,11 @@ async function main() {
 
   // ---------------- Marketplace ----------------
   const Marketplace = await hre.ethers.getContractFactory("Marketplace");
-  const marketplace = await Marketplace.deploy();
+  const platformAddress = deployer.address; // 或者单独指定平台钱包地址
+  const marketplace = await Marketplace.deploy(platformAddress);
   await marketplace.waitForDeployment();
   console.log("Marketplace deployed to:", marketplace.target);
+  console.log("Platform address:", platformAddress);
 
   // 可选：打印两个合约地址
   console.log("All contracts deployed successfully!");
