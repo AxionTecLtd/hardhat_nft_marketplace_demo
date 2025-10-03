@@ -41,6 +41,8 @@ const LOCAL_CREATOR_PRIVATE_KEY = process.env.LOCAL_CREATOR_PRIVATE_KEY; // 测�
 const local_test_wallet = new ethers.Wallet(LOCAL_CREATOR_PRIVATE_KEY, provider);  // 测试用钱包实例（本地）
 // 购买者私钥
 const LOCAL_SELLER_PRIVATE_KEY_LIST  =  process.env.LOCAL_SELLER_PRIVATE_KEY_LIST // only for test
+const local_test_seller_wallet = new ethers.Wallet(LOCAL_CREATOR_PRIVATE_KEY, provider);  // 测试用钱包实例（本地）
+
 
 
 
@@ -66,6 +68,8 @@ module.exports = {
     // 测试网 可以直接替换
     LOCAL_CREATOR_PRIVATE_KEY,                  // 本地
     LOCAL_SELLER_PRIVATE_KEY_LIST,              // 购买后出售上架用的 私钥代 seller
+    local_test_seller_wallet                   // local seller wallet
+    
 
 
 };

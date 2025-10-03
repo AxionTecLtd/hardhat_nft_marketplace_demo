@@ -97,6 +97,21 @@ contract Marketplace is ReentrancyGuard {
     }
 
     // =========================================
+    // 已经上架的 NFT 想改价
+    // =========================================
+    function updateListingPrice(address nftContract, uint256 tokenId, uint256 newPrice) external {
+        Listing storage listing = listings[nftContract][tokenId];
+        require(listing.seller == msg.sender, "Not seller");
+        require(newPrice > 0, "Price must be > 0");
+
+        listing.price = newPrice;
+
+        emit ItemListed(nftContract, tokenId, msg.sender, newPrice); // 复用事件通知前端
+    }
+
+
+
+    // =========================================
     // 二级市场购买 NFT
     // 资金流向：
     // 1️⃣ 创作者版税（ERC2981） → 直接转给创作者

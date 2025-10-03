@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db'); // PostgreSQL pool
 const { ethers } = require('ethers');
-const { lazyNFT, marketplace, provider, lazyNFTAddress,LOCAL_SELLER_PRIVATE_KEY_LIST, marketplaceAddress } = require('../contracts');
+const { lazyNFT, marketplace, provider, lazyNFTAbi,lazyNFTAddress,LOCAL_SELLER_PRIVATE_KEY_LIST, marketplaceAddress } = require('../contracts');
 
 
 // --------------------------
@@ -12,7 +12,8 @@ const { lazyNFT, marketplace, provider, lazyNFTAddress,LOCAL_SELLER_PRIVATE_KEY_
 console.log('lazyNFTAddress:', lazyNFTAddress);
 console.log('lazyNFT:', lazyNFT);
 console.log('marketplace:', marketplace);
-console.log('marketplace:', LOCAL_SELLER_PRIVATE_KEY_LIST);
+console.log('LOCAL_SELLER_PRIVATE_KEY_LIST:', LOCAL_SELLER_PRIVATE_KEY_LIST);
+
 
 
 // --------------------------
@@ -205,7 +206,7 @@ router.post('/marketplace/buy', async (req, res) => {
         let tx;
         let tokenIdOnChain;
 
-        // ============================= 一级市场 (懒铸造) ==================
+        // ============================= 一级市场 (懒铸造) ===========================
         if (!nft.token_id) {
             // NFT 未铸造，需要 Voucher
             console.log(`[${new Date().toISOString()}] 🔑 NFT ${nft_id} 未铸造，一级市场mint+transfe ，查 Voucher 并调 LazyNFT redeem 懒铸造...`);
@@ -228,6 +229,7 @@ router.post('/marketplace/buy', async (req, res) => {
                 tokenURI: voucherRow.token_uri,
                 minPrice: BigInt(voucherRow.min_price),
                 creator: voucherRow.creator_address,
+                feeNumerator: voucherRow.fee_numerator, // ⚡ 关键映射
                 nonce: BigInt(voucherRow.nonce)
             };
 
@@ -307,10 +309,10 @@ router.post('/marketplace/buy', async (req, res) => {
 
 
 
-// =======================================
-// 二级市场 NFT 上架 
-// 路由风格与 /marketplace/buy 一致
-// =======================================
+
+// ===================================================
+// 二级市场 NFT 上架（后端固定seller测试版本）-暂行
+// ===================================================
 router.post('/marketplace/list', async (req, res) => {
     const client = await pool.connect();
     const toSerializable = (obj) => JSON.parse(JSON.stringify(obj, (_, v) =>
@@ -332,21 +334,75 @@ router.post('/marketplace/list', async (req, res) => {
         }
         const nft = nftResult.rows[0];
 
-        // 准备 Seller 钱包
+        // NFT 合约实例（用当前用户钱包）
+        const sellerWallet = new ethers.Wallet(LOCAL_SELLER_PRIVATE_KEY_LIST, provider); 
+        console.log(`[${new Date().toISOString()}] 👜 卖家钱包: ${sellerWallet.address}`);
 
-        const sellerWallet = new ethers.Wallet(LOCAL_SELLER_PRIVATE_KEY_LIST, provider);
-        console.log(`[${new Date().toISOString()}] 👜 Seller 钱包: ${sellerWallet.address}`);
+        // lazyNFT 就是合约实例
+        // const nftContract = new ethers.Contract(lazyNFTAddress, lazyNFTAbi, provider);
 
-        // 链上 Marketplace 合约上架
+        // -------------------------------
+        // 链上检查卖家是否为 lazyNFT 合约中的 NFT 拥有者
+        // 使用 BigInt 确保类型正确
+        // -------------------------------
+        const tokenIdBig = BigInt(nft.token_id);
+        const onChainOwner = await lazyNFT.ownerOf(tokenIdBig);
+        if (onChainOwner.toLowerCase() !== sellerAddress.toLowerCase()) {
+            return res.status(403).json({ success: false, error: "当前用户不是 NFT 拥有者" });
+        }
+
+        // -------------------------------
+        // 检查 lazyNFT 合约 是否已对 Marketplace 合约 授权所有 NFT
+        // 注意：不要使用 marketplace.address（在 ethers v6 中通常是 undefined）
+        // 改为使用后端导出的 marketplaceAddress（或 marketplace.target）
+        // -------------------------------
+        // 推荐使用从 contracts.js 导出的 marketplaceAddress（字符串）
+        const operatorAddr = (typeof marketplaceAddress !== 'undefined') ? marketplaceAddress : marketplace.target;
+        console.log(`[${new Date().toISOString()}] DEBUG operatorAddr = ${operatorAddr}`);
+
+        const nftWithSeller = lazyNFT.connect(sellerWallet);
+
+        // 读取当前 nonce（最新已计入链上的 nonce）
+        let nonce = await provider.getTransactionCount(sellerWallet.address, "latest");
+        console.log(`[${new Date().toISOString()}] DEBUG starting nonce = ${nonce}`);
+
+        // 检查并授予 Marketplace 授权（如果还没授权）
+        const isApprovedForAll = await nftWithSeller.isApprovedForAll(sellerAddress, operatorAddr);
+        if (!isApprovedForAll) {
+            console.log(`[${new Date().toISOString()}] 🔑 NFT 未授权 Marketplace，正在授权所有 NFT...`);
+            // 显式用当前 nonce 发授权 tx，避免自动 nonce 冲突
+            const approveTx = await nftWithSeller.setApprovalForAll(operatorAddr, true, { nonce });
+            await approveTx.wait();
+            console.log(`[${new Date().toISOString()}] ✅ NFT 全部授权给 Marketplace 完成 (nonce used: ${nonce})`);
+            // 增加 nonce 准备发送下一笔（list）交易
+            nonce = nonce + 1n;
+        } else {
+            // 若已授权，则把 nonce 同步为链上最新值（保证正确）
+            nonce = await provider.getTransactionCount(sellerWallet.address, "latest");
+            console.log(`[${new Date().toISOString()}] ✅ 已授权，刷新 nonce = ${nonce}`);
+        }
+
+        // -------------------------------
+        // 链上 Marketplace 上架（显式传 nonce）
+        // -------------------------------
         const contractWithSeller = marketplace.connect(sellerWallet);
         const priceInWei = ethers.parseEther(price.toString());
 
-        const tx = await contractWithSeller.listItem(lazyNFTAddress, nft.token_id, priceInWei);
-        console.log(`[${new Date().toISOString()}] ⏳ 上架交易发送完成: txHash=${tx.hash}`);
+        // DEBUG 打印关键值
+        console.log("DEBUG lazyNFTAddress =", lazyNFTAddress);
+        console.log("DEBUG tokenId =", tokenIdBig);
+        console.log("DEBUG priceInWei =", priceInWei.toString());
+        console.log("DEBUG tx nonce to use =", nonce.toString());
+
+        // 显式传 nonce，确保不会与其他并发 tx 冲突
+        const tx = await contractWithSeller.listItem(lazyNFTAddress, tokenIdBig, priceInWei, { nonce });
+        console.log(`[${new Date().toISOString()}] ⏳ 上架交易发送完成: txHash=${tx.hash}, nonce=${nonce}`);
         await tx.wait();
         console.log(`[${new Date().toISOString()}] ✅ NFT 链上上架完成: tokenId=${nft.token_id}`);
 
-        // 数据库标记上架状态
+        // -------------------------------
+        // 数据库更新上架状态
+        // -------------------------------
         await client.query(
             `UPDATE nfts
              SET is_listed=1,
@@ -373,10 +429,10 @@ router.post('/marketplace/list', async (req, res) => {
     }
 });
 
-// =======================================
-// 二级市场 NFT  下架
-// 路由风格与 /marketplace/buy 一致
-// =======================================
+
+// ===================================================
+// 二级市场 NFT  下架链上停售 （后端固定seller测试版本）-暂行
+// ===================================================
 router.post('/marketplace/cancel', async (req, res) => {
     const client = await pool.connect();
     const toSerializable = (obj) => JSON.parse(JSON.stringify(obj, (_, v) =>
@@ -398,20 +454,44 @@ router.post('/marketplace/cancel', async (req, res) => {
         }
         const nft = nftResult.rows[0];
 
-        // 链上 Marketplace 合约下架
-        const LOCAL_SELLER_PRIVATE_KEY_UNLIST = LOCAL_SELLER_PRIVATE_KEY_LIST; // for test
-        const sellerWallet = new ethers.Wallet(LOCAL_SELLER_PRIVATE_KEY_UNLIST, provider);
+        // NFT token_id 必须存在
+        if (!nft.token_id) {
+            return res.status(400).json({ success: false, error: "NFT 尚未铸造，无法下架" });
+        }
+
+        // 准备卖家 signer
+        const sellerWallet = new ethers.Wallet(LOCAL_SELLER_PRIVATE_KEY_LIST, provider);
+        console.log(`[${new Date().toISOString()}] 👜 卖家钱包: ${sellerWallet.address}`);
+
+        // 检查链上拥有者
+        const tokenIdBig = BigInt(nft.token_id);
+        const onChainOwner = await lazyNFT.ownerOf(tokenIdBig);
+        if (onChainOwner.toLowerCase() !== sellerAddress.toLowerCase()) {
+            return res.status(403).json({ success: false, error: "当前用户不是 NFT 拥有者" });
+        }
+
+        // operatorAddr
+        const operatorAddr = (typeof marketplaceAddress !== 'undefined') ? marketplaceAddress : marketplace.target;
+        console.log(`[${new Date().toISOString()}] DEBUG operatorAddr = ${operatorAddr}`);
+
+        // 获取当前 nonce
+        let nonce = await provider.getTransactionCount(sellerWallet.address, "latest");
+        console.log(`[${new Date().toISOString()}] DEBUG starting nonce = ${nonce}`);
+
+        // 连接 Marketplace 合约
         const contractWithSeller = marketplace.connect(sellerWallet);
 
-        const tx = await contractWithSeller.cancelListing(lazyNFTAddress, nft.token_id);
-        console.log(`[${new Date().toISOString()}] ⏳ 下架交易发送完成: txHash=${tx.hash}`);
+        // 下架 tx 显式传 nonce
+        const tx = await contractWithSeller.cancelListing(lazyNFTAddress, tokenIdBig, { nonce });
+        console.log(`[${new Date().toISOString()}] ⏳ 下架交易发送完成: txHash=${tx.hash}, nonce=${nonce}`);
         await tx.wait();
         console.log(`[${new Date().toISOString()}] ✅ NFT 链上下架完成: tokenId=${nft.token_id}`);
 
         // 数据库标记下架状态
         await client.query(
             `UPDATE nfts
-             SET is_listed=0
+             SET is_listed=0,
+             is_onchain=0
              WHERE nft_id=$1`,
             [nft_id]
         );
@@ -431,6 +511,153 @@ router.post('/marketplace/cancel', async (req, res) => {
     }
 });
 
+// ===================================================
+// 二级市场 NFT  链上改价 （后端固定seller测试版本）-暂行
+// ===================================================
+router.post('/marketplace/update-price', async (req, res) => {
+    const client = await pool.connect();
+    const toSerializable = (obj) => JSON.parse(JSON.stringify(obj, (_, v) =>
+        typeof v === "bigint" ? v.toString() : v
+    ));
+
+    try {
+        const { sellerAddress, nft_id, newPrice } = req.body;
+        console.log(`[${new Date().toISOString()}] 📩 改价请求: seller=${sellerAddress}, nft_id=${nft_id}, newPrice=${newPrice}`);
+
+        if (!sellerAddress || !nft_id || !newPrice) {
+            return res.status(400).json({ success: false, error: "缺少参数" });
+        }
+
+        // 查询 NFT
+        const nftResult = await client.query(`SELECT * FROM nfts WHERE nft_id=$1`, [nft_id]);
+        if (nftResult.rowCount === 0) {
+            return res.status(404).json({ success: false, error: "NFT 不存在" });
+        }
+        const nft = nftResult.rows[0];
+
+        if (!nft.token_id) {
+            return res.status(400).json({ success: false, error: "NFT 尚未铸造，无法改价" });
+        }
+
+        // 准备卖家 signer
+        const sellerWallet = new ethers.Wallet(LOCAL_SELLER_PRIVATE_KEY_LIST, provider);
+        console.log(`[${new Date().toISOString()}] 👜 卖家钱包: ${sellerWallet.address}`);
+
+        // 检查链上拥有者
+        const tokenIdBig = BigInt(nft.token_id);
+        const onChainOwner = await lazyNFT.ownerOf(tokenIdBig);
+        if (onChainOwner.toLowerCase() !== sellerAddress.toLowerCase()) {
+            return res.status(403).json({ success: false, error: "当前用户不是 NFT 拥有者" });
+        }
+
+        // 获取当前 nonce
+        let nonce = await provider.getTransactionCount(sellerWallet.address, "latest");
+        console.log(`[${new Date().toISOString()}] DEBUG starting nonce = ${nonce}`);
+
+        // 链上改价
+        const contractWithSeller = marketplace.connect(sellerWallet);
+        const priceInWei = ethers.parseEther(newPrice.toString());
+
+        console.log("DEBUG lazyNFTAddress =", lazyNFTAddress);
+        console.log("DEBUG tokenId =", tokenIdBig);
+        console.log("DEBUG newPriceInWei =", priceInWei.toString());
+        console.log("DEBUG tx nonce to use =", nonce.toString());
+
+        const tx = await contractWithSeller.updateListingPrice(lazyNFTAddress, tokenIdBig, priceInWei, { nonce });
+        console.log(`[${new Date().toISOString()}] ⏳ 改价交易发送完成: txHash=${tx.hash}, nonce=${nonce}`);
+        await tx.wait();
+        console.log(`[${new Date().toISOString()}] ✅ NFT 链上改价完成: tokenId=${nft.token_id}, newPrice=${newPrice}`);
+
+        // 数据库更新
+        await client.query(
+            `UPDATE nfts SET price=$1 WHERE nft_id=$2`,
+            [newPrice, nft_id]
+        );
+        console.log(`[${new Date().toISOString()}] 📝 数据库更新 NFT 价格完成`);
+
+        res.json(toSerializable({
+            success: true,
+            txHash: tx.hash,
+            nft_id,
+            newPrice
+        }));
+
+    } catch (err) {
+        console.error(`[${new Date().toISOString()}] ❌ 改价失败:`, err);
+        res.status(500).json({ success: false, error: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+
+
+// ===================================================
+// 二级市场 NFT 上架（前端签名版）-未完成 
+// // ===================================================
+// router.post('/marketplace/update-status', async (req, res) => {
+//     const client = await pool.connect();
+//     const toSerializable = (obj) => JSON.parse(JSON.stringify(obj, (_, v) =>
+//         typeof v === "bigint" ? v.toString() : v
+//     ));
+
+//     try {
+//         const { nft_id, is_listed, price, market_level, is_blockchain } = req.body;
+//         console.log(`[${new Date().toISOString()}] 📩 更新NFT状态请求: nft_id=${nft_id}, is_listed=${is_listed}, price=${price}, market_level=${market_level}, is_blockchain=${is_blockchain}`);
+
+//         if (!nft_id) {
+//             return res.status(400).json({ success: false, error: "缺少 nft_id" });
+//         }
+
+//         // 查询 NFT 是否存在
+//         const nftResult = await client.query(`SELECT * FROM nfts WHERE nft_id=$1`, [nft_id]);
+//         if (nftResult.rowCount === 0) {
+//             return res.status(404).json({ success: false, error: "NFT 不存在" });
+//         }
+
+//         // 构造动态更新字段
+//         const updates = [];
+//         const values = [];
+//         let idx = 1;
+
+//         if (typeof is_listed !== 'undefined') {
+//             updates.push(`is_listed = $${idx++}`);
+//             values.push(is_listed);
+//         }
+//         if (typeof price !== 'undefined') {
+//             updates.push(`price = $${idx++}`);
+//             values.push(price);
+//         }
+//         if (typeof market_level !== 'undefined') {
+//             updates.push(`market_level = $${idx++}`);
+//             values.push(market_level);
+//         }
+//         if (typeof is_blockchain !== 'undefined') {
+//             updates.push(`is_blockchain = $${idx++}`);
+//             values.push(is_blockchain);
+//         }
+
+//         if (updates.length === 0) {
+//             return res.status(400).json({ success: false, error: "没有需要更新的字段" });
+//         }
+
+//         // 更新时间戳
+//         updates.push(`updated_at = NOW()`);
+
+//         values.push(nft_id);
+//         const query = `UPDATE nfts SET ${updates.join(', ')} WHERE nft_id = $${idx}`;
+//         await client.query(query, values);
+
+//         console.log(`[${new Date().toISOString()}] 📝 NFT 数据库更新完成: nft_id=${nft_id}`);
+//         res.json(toSerializable({ success: true, nft_id }));
+
+//     } catch (err) {
+//         console.error(`[${new Date().toISOString()}] ❌ NFT状态更新失败:`, err);
+//         res.status(500).json({ success: false, error: err.message });
+//     } finally {
+//         client.release();
+//     }
+// });
 
 
 module.exports = router;

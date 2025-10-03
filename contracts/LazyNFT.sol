@@ -36,7 +36,7 @@ contract LazyNFT is ERC721URIStorage, ERC2981, EIP712, Ownable, ReentrancyGuard 
 
     // Voucher 类型哈希
     bytes32 private constant VOUCHER_TYPEHASH = keccak256(
-        "NFTVoucher(string tokenURI,uint256 minPrice,address creator,uint256 nonce)"
+        "NFTVoucher(string tokenURI,uint256 minPrice,address creator,uint96 feeNumerator,uint256 nonce)"
     );
 
     // 已使用 voucher nonce 防重放
@@ -47,6 +47,7 @@ contract LazyNFT is ERC721URIStorage, ERC2981, EIP712, Ownable, ReentrancyGuard 
         string tokenURI;
         uint256 minPrice;
         address creator;
+        uint96 feeNumerator; // 版税分子（分母为 10000）
         uint256 nonce;
     }
 
@@ -57,6 +58,7 @@ contract LazyNFT is ERC721URIStorage, ERC2981, EIP712, Ownable, ReentrancyGuard 
     event Transferred(address indexed from, address indexed to, uint256 tokenId);
     event Burned(address indexed owner, uint256 tokenId);
     event RoyaltyPaid(address indexed creator, uint256 tokenId, uint256 amount);
+    event RoyaltySet(address indexed creator, uint256 tokenId, uint96 feeNumerator);
 
     // ============================
     // 构造函数
@@ -64,9 +66,10 @@ contract LazyNFT is ERC721URIStorage, ERC2981, EIP712, Ownable, ReentrancyGuard 
     constructor() ERC721("LazyNFT","LNFT") EIP712("LazyNFT","1") {}
 
     // ============================
-    // 管理员可设置版税
+    // 管理员可设置单个 token 的版税（保留给合约拥有者）
     // ============================
     function setTokenRoyaltyPublic(uint256 tokenId, address receiver, uint96 feeNumerator) external onlyOwner {
+        require(feeNumerator <= _feeDenominator(), "fee too high");
         _setTokenRoyalty(tokenId, receiver, feeNumerator);
     }
 
@@ -87,6 +90,7 @@ contract LazyNFT is ERC721URIStorage, ERC2981, EIP712, Ownable, ReentrancyGuard 
                 keccak256(bytes(voucher.tokenURI)),
                 voucher.minPrice,
                 voucher.creator,
+                voucher.feeNumerator,
                 voucher.nonce
             )
         );
@@ -102,6 +106,9 @@ contract LazyNFT is ERC721URIStorage, ERC2981, EIP712, Ownable, ReentrancyGuard 
         require(signer == voucher.creator, "Invalid voucher");
         require(msg.value >= voucher.minPrice, "Insufficient funds");
         require(!usedNonces[signer][voucher.nonce], "Voucher already used");
+        // fee 限制（0 ~ 10000）
+        require(voucher.feeNumerator <= _feeDenominator(), "fee too high");
+
         usedNonces[signer][voucher.nonce] = true;
 
         _tokenIds.increment();
@@ -109,15 +116,14 @@ contract LazyNFT is ERC721URIStorage, ERC2981, EIP712, Ownable, ReentrancyGuard 
         _mint(msg.sender, newId);
         _setTokenURI(newId, voucher.tokenURI);
 
-        // 默认 5% 版税
-        uint256 royaltyAmount = msg.value * 500 / 10000;
-        _setTokenRoyalty(newId, voucher.creator, 500);
+        // 使用 voucher 中创作者设置的版税
+        _setTokenRoyalty(newId, voucher.creator, voucher.feeNumerator);
 
-        // 支付创作者
+        // 主售支付：把收到的款项发送给创作者（如果平台另有分成/托管逻辑，可在此调整）
         payable(voucher.creator).sendValue(msg.value);
 
         emit Minted(voucher.creator, msg.sender, newId, voucher.tokenURI);
-        emit RoyaltyPaid(voucher.creator, newId, royaltyAmount);
+        emit RoyaltySet(voucher.creator, newId, voucher.feeNumerator);
 
         return newId;
     }

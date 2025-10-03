@@ -70,14 +70,21 @@ router.post('/:address/nfts/lazy', async (req, res) => {
 
         // ✅ 生成 Voucher（签名凭证） 
         // const token_uri = `ipfs://Qm123abc/${nft.nft_id}.json`; // 不用生成 metadata JSON URL，直接使用前端传来的 token_uri，可以降低维护费和法律风险
-        const voucher = await createVoucher(nft.nft_id, price, token_uri);
+        const voucher = await createVoucher(nft.nft_id, price, token_uri, royalty_percent);
 
         // ✅ 存 Voucher 数据
+        // const voucherResult = await client.query(
+        //     `INSERT INTO vouchers(nft_id, token_uri, min_price, signature, creator_address,nonce)
+        //      VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
+        //      [nft.nft_id, token_uri, voucher.minPrice, voucher.signature, voucher.creator, voucher.nonce]
+        // );
         const voucherResult = await client.query(
-            `INSERT INTO vouchers(nft_id, token_uri, min_price, signature, creator_address,nonce)
-             VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
-             [nft.nft_id, token_uri, voucher.minPrice, voucher.signature, voucher.creator, voucher.nonce]
+            `INSERT INTO vouchers(nft_id, token_uri, royalty_percent,min_price, signature, creator_address, nonce, fee_numerator)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+            [nft.nft_id, token_uri,royalty_percent, voucher.minPrice, voucher.signature, voucher.creator, voucher.nonce, voucher.feeNumerator]
         );
+        
+
 
         console.log(`[${new Date().toISOString()}] 📝 Voucher 已生成: nft_id=${nft.nft_id}`);
 
@@ -97,11 +104,14 @@ router.post('/:address/nfts/lazy', async (req, res) => {
 });
 
 
+
+
+
 // ================ 工具：生成 voucher 凭证  ========================
 // 记得引入ethers.js 和运行的网络条件provider、平台私钥地址这里，只作为演示，后期可替换
-async function createVoucher(nft_id, minPrice, token_uri) {
+async function createVoucher(nft_id, minPrice, token_uri,royalty_percent) {
     try {
-        console.log(`[${new Date().toISOString()}] 🔑 开始生成 Voucher: nft_id=${nft_id}, price=${minPrice}`);
+        console.log(`[${new Date().toISOString()}] 🔑 开始生成 Voucher: nft_id=${nft_id}, price=${minPrice}, royalty=${royalty_percent}%`);
         const creatorWallet = new ethers.Wallet(process.env.LOCAL_CREATOR_PRIVATE_KEY, provider);
         const domain = {
                 name: 'LazyNFT',  // <-- 改成合约里 EIP712 的 name
@@ -114,6 +124,7 @@ async function createVoucher(nft_id, minPrice, token_uri) {
                 { name: 'tokenURI', type: 'string' },
                 { name: 'minPrice', type: 'uint256' },
                 { name: 'creator', type: 'address' },
+                 { name: 'feeNumerator', type: 'uint96' },   // ✅ 新增
                 { name: 'nonce', type: 'uint256' }
             ]
         };
@@ -121,6 +132,7 @@ async function createVoucher(nft_id, minPrice, token_uri) {
             tokenURI: token_uri,
             minPrice: ethers.parseEther(minPrice.toString()).toString(), // ⚡字符串
             creator: creatorWallet.address, // ✅ 签名者地址
+            feeNumerator: royalty_percent * 100,  // ✅ 输入 5 → 转 500
             nonce: nft_id.toString() // ⚡字符串化  // 用 nft_id 保证唯一
         };
 
@@ -138,7 +150,8 @@ async function createVoucher(nft_id, minPrice, token_uri) {
                     token_uri,
                     signature,
                     nonce: value.nonce,
-                    creator: creatorWallet.address
+                    creator: creatorWallet.address,
+                    feeNumerator: value.feeNumerator
                 };
                 
 
